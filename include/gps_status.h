@@ -21,8 +21,10 @@ class SerialPort
 {
  protected:
     boost::asio::io_service io_service;
-    serial_port_ptr port;
+  //serial_port_ptr port;
+  boost::asio::serial_port port;
     boost::mutex mutex;
+  std::thread thr;
 
     char read_buf_raw[SERIAL_PORT_READ_BUF_SIZE];
     std::string read_buf_str;

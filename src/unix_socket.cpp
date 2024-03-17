@@ -47,7 +47,6 @@ uint8_t UnixSocketServer::AvgSnrArray(const void *snr, size_t len, uint8_t satel
 
     // Use list of satellites in use to determine the values of the satellites_visible the we should use.
 
-
     if(satellites_visbile == 0) {
         return 0;
     }

@@ -206,7 +206,6 @@ void MavlinkInterface::Load()
   auto gps_status_cb = [this] (const std::string &sentence)
   {
     gsv_sentence gsv(sentence);
-
     if (!gsv.valid)
         return;
 
@@ -217,6 +216,7 @@ void MavlinkInterface::Load()
         gps_status_itr = 0;
     }
 
+    //std::cout << "gsv info size : " << gsv.satellite_info.size() << std::endl;
     if (gsv.satellite_info.size() > 0)
     {
         gps_status.satellites_visible = gsv.sat_count;
@@ -254,7 +254,7 @@ void MavlinkInterface::Load()
   std::string gps_receiver_port = "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00";
   nmea_gps_port.setCallback(std::move(gps_status_cb));
   std::cout << "reading nmea gsv data at " << gps_receiver_port << std::endl;
-  nmea_gps_port.start(gps_receiver_port.c_str());
+  nmea_gps_port.start(gps_receiver_port.c_str(), 115200);
 }
 
 void MavlinkInterface::SendSensorMessages(uint64_t time_usec) {
