@@ -322,16 +322,10 @@ void GpsPlugin::OnWorldUpdate(const common::UpdateInfo& /*_info*/)
   uint8_t buffer;
   ssize_t bytes_received = recvfrom(socket_fd_, &buffer, sizeof(buffer), 0, (struct sockaddr *)&remote_addr_, (socklen_t*)&remote_addr_len_);
   if (bytes_received > 0) {
-    spoof_flag = !spoof_flag;
+    spoof_flag = buffer;
   }
 
-  double lat_offset = 0;
-  double lon_offset = 0;
-  if (spoof_flag) {
-    lat_offset = 1;
-    lon_offset = 1;
-  }
-
+  double offset = spoof_flag * 1;
 
   // gps bias integration
   gps_bias_.X() += random_walk_gps_.X() * dt - gps_bias_.X() / gps_corellation_time_;
@@ -339,8 +333,8 @@ void GpsPlugin::OnWorldUpdate(const common::UpdateInfo& /*_info*/)
   gps_bias_.Z() += random_walk_gps_.Z() * dt - gps_bias_.Z() / gps_corellation_time_;
 
   // reproject position with noise into geographic coordinates
-  double lat_after_offset = lat_home_+lat_offset;
-  double lon_after_offset = lon_home_+lon_offset;
+  double lat_after_offset = lat_home_ + offset;
+  double lon_after_offset = lon_home_ + offset;
   auto pos_with_noise = pos_W_I + noise_gps_pos_ + gps_bias_;
   auto latlon = reproject(pos_with_noise, lat_after_offset, lon_after_offset, alt_home_);
 
