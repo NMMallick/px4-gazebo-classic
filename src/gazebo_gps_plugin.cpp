@@ -325,7 +325,10 @@ void GpsPlugin::OnWorldUpdate(const common::UpdateInfo& /*_info*/)
     spoof_flag = buffer;
   }
 
-  double offset = spoof_flag * 1;
+  double offset = 0;
+  if (spoof_flag > 0) {
+    offset = .00001 * pow(2, spoof_flag); //doubles the offset w/ each step up
+  }
 
   // gps bias integration
   gps_bias_.X() += random_walk_gps_.X() * dt - gps_bias_.X() / gps_corellation_time_;
