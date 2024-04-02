@@ -60,7 +60,6 @@ namespace gazebo
   static constexpr double kDefaultGpsVZNoiseDensity = 0.4;    // (m/s) / sqrt(hz)
 
   static const uint32_t kDefaultPort = 14570;
-  int spoof_flag = 0;
 
   class GAZEBO_VISIBLE GpsPlugin : public SensorPlugin
   {
@@ -147,6 +146,9 @@ namespace gazebo
     socklen_t local_addr_len_;
 
     int socket_fd_{0};
+
+    bool spoof_flag;
+    bool jam_flag;
 
   }; // class GAZEBO_VISIBLE GpsPlugin
 } // namespace gazebo
