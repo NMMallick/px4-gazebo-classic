@@ -30,6 +30,10 @@
 
 using namespace std;
 
+//defines angle at which spoofing offset will occur
+float theta = float(rand()/float(M_PI));
+
+
 namespace gazebo {
 GZ_REGISTER_SENSOR_PLUGIN(GpsPlugin)
 
@@ -54,6 +58,7 @@ void GpsPlugin::Load(sensors::SensorPtr _parent, sdf::ElementPtr _sdf)
   local_addr_len_ = sizeof(local_addr_);
 
   spoof_flag = false;
+
   //create socket
   if ((socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
     std::cerr << "Creating socket j failed: " << strerror(errno) << ", aborting\n";
@@ -319,15 +324,23 @@ void GpsPlugin::OnWorldUpdate(const common::UpdateInfo& /*_info*/)
   }
 
   // Add additional position offset if the spoofing flag is thrown
-  uint8_t buffer;
+  uint16_t buffer;
   ssize_t bytes_received = recvfrom(socket_fd_, &buffer, sizeof(buffer), 0, (struct sockaddr *)&remote_addr_, (socklen_t*)&remote_addr_len_);
   if (bytes_received > 0) {
     spoof_flag = buffer;
   }
 
+  //get vector representing 
+  double lat_rot;
+  double lon_rot;
+
   double offset = 0;
   if (spoof_flag > 0) {
     offset = .00001 * pow(2, spoof_flag); //doubles the offset w/ each step up
+    //get vector representing a random rotation of [offset, offset] preserving distance
+    //rotation [xcosTH - ysinTH, xsinTH + ycosTH] where theta (TH) is random rad value
+    lat_rot = double( (offset * cos(theta)) - (offset * sin(theta)) );
+    lon_rot = double( (offset * sin(theta)) + (offset * cos(theta)) );
   }
 
   // gps bias integration
@@ -336,8 +349,8 @@ void GpsPlugin::OnWorldUpdate(const common::UpdateInfo& /*_info*/)
   gps_bias_.Z() += random_walk_gps_.Z() * dt - gps_bias_.Z() / gps_corellation_time_;
 
   // reproject position with noise into geographic coordinates
-  double lat_after_offset = lat_home_ + offset;
-  double lon_after_offset = lon_home_ + offset;
+  double lat_after_offset = lat_home_ + lat_rot;
+  double lon_after_offset = lon_home_ + lon_rot;
   auto pos_with_noise = pos_W_I + noise_gps_pos_ + gps_bias_;
   auto latlon = reproject(pos_with_noise, lat_after_offset, lon_after_offset, alt_home_);
 
