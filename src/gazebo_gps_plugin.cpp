@@ -384,8 +384,6 @@ void GpsPlugin::OnWorldUpdate(const common::UpdateInfo& /*_info*/)
   double lat_after_offset = lat_home_;
   double lon_after_offset = lon_home_;
   auto pos_with_noise = pos_W_I + noise_gps_pos_ + gps_bias_;
-  std::cout << lat_rot;
-  std::cout << "\n";
   if (lat_rot != 0)
   {
     lat_after_offset = lat_home_ + lat_rot;
