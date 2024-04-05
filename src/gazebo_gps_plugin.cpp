@@ -24,11 +24,20 @@
  * @author Nuno Marques <nuno.marques@dronesolutions.io>
  */
 
+#include <cstdint>
 #include <gazebo_gps_plugin.h>
 
 #include <boost/algorithm/string.hpp>
 
 using namespace std;
+
+//defines angle at which spoofing offset will occur.
+float theta = float(rand()/float(2*M_PI));
+
+uint16_t spoof_level = 0x00;
+double offset  = 0;
+double lat_rot = 0;
+double lon_rot = 0;
 
 namespace gazebo {
 GZ_REGISTER_SENSOR_PLUGIN(GpsPlugin)
@@ -73,7 +82,7 @@ void GpsPlugin::Load(sensors::SensorPtr _parent, sdf::ElementPtr _sdf)
     gzerr << "Failed to set socket to non-blocking mode: " << strerror(errno) << std::endl;
     close(socket_fd_);
     return;
-  }  
+  }
 
   //binding to socket
   if (bind(socket_fd_, (struct sockaddr *)&local_addr_, local_addr_len_) < 0) {
@@ -294,17 +303,65 @@ void GpsPlugin::OnWorldUpdate(const common::UpdateInfo& /*_info*/)
   ignition::math::Vector3d velocity_current_W_xy = velocity_current_W;
   velocity_current_W_xy.Z() = 0;
 
+
+  // Add additional position offset if the spoofing flag is thrown
+  uint16_t buffer = 0x0000;
+  ssize_t bytes_received = recvfrom(socket_fd_, &buffer, sizeof(buffer), 0, (struct sockaddr *)&remote_addr_, (socklen_t*)&remote_addr_len_);
+
+  if (bytes_received >= 2) {
+      // The upper 8 bits will indicate spoof or jamming
+      // If the upper 8 bits > 0 then indicate jamming (aka turn gps off)
+      // If the upper 8 bits = 0 then indicate spoofing (aka inject more noise to the gps sensors)
+
+      // Reset the jamming and spoof flags
+      jam_flag = false;
+      spoof_flag = false;
+
+      // jamming
+      if ((buffer & 0xff00))
+      {
+          jam_flag = true;
+          offset =  0;
+          lat_rot = 0;
+          lon_rot = 0;
+      } else
+      {
+          spoof_flag = true;
+      };
+
+      if (spoof_flag)
+      {
+        spoof_level = buffer;
+        if (spoof_level > 0) {
+          offset = .00001 * pow(2, spoof_level); //doubles the offset w/ each step up
+          //get vector representing a random rotation of [offset, offset] preserving distance
+          //rotation [xcosTH - ysinTH, xsinTH + ycosTH] where theta (TH) is random rad value
+          lat_rot = double( (offset * cos(theta)) - (offset * sin(theta)) );
+          lon_rot = double( (offset * sin(theta)) + (offset * cos(theta)) );
+        }
+        else {
+          offset = 0;
+          lat_rot = 0;
+          lon_rot = 0;
+        }
+      }
+  }
+
   // update noise parameters if gps_noise_ is set
-  if (gps_noise_) {
-    noise_gps_pos_.X() = gps_xy_noise_density_ * sqrt(dt) * randn_(rand_);
-    noise_gps_pos_.Y() = gps_xy_noise_density_ * sqrt(dt) * randn_(rand_);
-    noise_gps_pos_.Z() = gps_z_noise_density_ * sqrt(dt) * randn_(rand_);
-    noise_gps_vel_.X() = gps_vxy_noise_density_ * sqrt(dt) * randn_(rand_);
-    noise_gps_vel_.Y() = gps_vxy_noise_density_ * sqrt(dt) * randn_(rand_);
-    noise_gps_vel_.Z() = gps_vz_noise_density_ * sqrt(dt) * randn_(rand_);
-    random_walk_gps_.X() = gps_xy_random_walk_ * sqrt(dt) * randn_(rand_);
-    random_walk_gps_.Y() = gps_xy_random_walk_ * sqrt(dt) * randn_(rand_);
-    random_walk_gps_.Z() = gps_z_random_walk_ * sqrt(dt) * randn_(rand_);
+  if (spoof_flag) {
+    noise_gps_pos_.X() = gps_xy_noise_density_ * randn_(rand_);
+    noise_gps_pos_.Y() = gps_xy_noise_density_ * randn_(rand_);
+    noise_gps_pos_.Z() = gps_z_noise_density_ * randn_(rand_);
+    noise_gps_vel_.X() = gps_vxy_noise_density_ * randn_(rand_);
+    noise_gps_vel_.Y() = gps_vxy_noise_density_ * randn_(rand_);
+    noise_gps_vel_.Z() = gps_vz_noise_density_ * randn_(rand_);
+
+    if (spoof_level != 0x00)
+    {
+        random_walk_gps_.X() = gps_xy_random_walk_ * sqrt(dt) * randn_(rand_);
+        random_walk_gps_.Y() = gps_xy_random_walk_ * sqrt(dt) * randn_(rand_);
+        random_walk_gps_.Z() = gps_z_random_walk_ * sqrt(dt) * randn_(rand_);
+    }
   }
   else {
     noise_gps_pos_.X() = 0.0;
@@ -318,27 +375,24 @@ void GpsPlugin::OnWorldUpdate(const common::UpdateInfo& /*_info*/)
     random_walk_gps_.Z() = 0.0;
   }
 
-  // Add additional position offset if the spoofing flag is thrown
-  uint8_t buffer;
-  ssize_t bytes_received = recvfrom(socket_fd_, &buffer, sizeof(buffer), 0, (struct sockaddr *)&remote_addr_, (socklen_t*)&remote_addr_len_);
-  if (bytes_received > 0) {
-    spoof_flag = buffer;
-  }
-
-  double offset = 0;
-  if (spoof_flag > 0) {
-    offset = .00001 * pow(2, spoof_flag); //doubles the offset w/ each step up
-  }
-
   // gps bias integration
   gps_bias_.X() += random_walk_gps_.X() * dt - gps_bias_.X() / gps_corellation_time_;
   gps_bias_.Y() += random_walk_gps_.Y() * dt - gps_bias_.Y() / gps_corellation_time_;
   gps_bias_.Z() += random_walk_gps_.Z() * dt - gps_bias_.Z() / gps_corellation_time_;
 
   // reproject position with noise into geographic coordinates
-  double lat_after_offset = lat_home_ + offset;
-  double lon_after_offset = lon_home_ + offset;
+  double lat_after_offset = lat_home_;
+  double lon_after_offset = lon_home_;
   auto pos_with_noise = pos_W_I + noise_gps_pos_ + gps_bias_;
+  if (lat_rot != 0)
+  {
+    lat_after_offset = lat_home_ + lat_rot;
+    lon_after_offset = lon_home_ + lon_rot;
+  }
+  else if (jam_flag) {
+    lat_after_offset = 0;
+    lon_after_offset = 0;
+  }
   auto latlon = reproject(pos_with_noise, lat_after_offset, lon_after_offset, alt_home_);
 
   // fill SITLGps msg
